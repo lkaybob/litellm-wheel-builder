@@ -47,7 +47,7 @@ jobs:
             SUDO=
           fi
           $SUDO apt-get update
-          $SUDO apt-get install -y --no-install-recommends build-essential
+          $SUDO apt-get install -y --no-install-recommends build-essential xz-utils
 
       - name: Install uv
         # The runner's system Python was found to be 3.9 with no pip
@@ -57,7 +57,39 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Build wheel
+      - name: Install Node.js
+        # Version comes from litellm's own ui/litellm-dashboard/.nvmrc so
+        # this tracks whatever the pinned submodule tag actually requires.
+        # Downloaded and checksum-verified directly (no setup-node action,
+        # no piping an installer script to a shell) rather than via nvm,
+        # matching litellm's own docker/build_admin_ui.sh in spirit.
+        run: |
+          NODE_VERSION="$(cat litellm/ui/litellm-dashboard/.nvmrc)"
+          DIST="node-v${NODE_VERSION}-linux-x64"
+          WORKDIR="$(mktemp -d)"
+          cd "$WORKDIR"
+          curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/${DIST}.tar.xz"
+          curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" \
+            | grep " ${DIST}.tar.xz\$" | sha256sum -c -
+          mkdir -p "$HOME/.local"
+          tar -xJf "${DIST}.tar.xz" -C "$HOME/.local"
+          mv "$HOME/.local/${DIST}" "$HOME/.local/node"
+          echo "$HOME/.local/node/bin" >> "$GITHUB_PATH"
+
+      - name: Build admin UI and replace the committed bundle
+        # The committed litellm/proxy/_experimental/out already works (it's a
+        # complete, self-consistent export - verified), but litellm's own
+        # Dockerfile always discards it and rebuilds fresh from ui/litellm-dashboard
+        # before packaging, so this workflow matches that instead of relying
+        # on whatever happened to be committed at tagging time.
+        run: |
+          cd litellm/ui/litellm-dashboard
+          npm ci
+          npm run build
+          rm -rf ../../litellm/proxy/_experimental/out
+          cp -r out/. ../../litellm/proxy/_experimental/out/
+
+      - name: Build litellm wheel
         # uv build reads [build-system] requires from litellm/pyproject.toml
         # (currently maturin==1.9.4) via PEP 517 build isolation, so the
         # maturin version tracks whatever the pinned submodule tag declares
@@ -65,13 +97,27 @@ jobs:
         working-directory: litellm
         run: uv build --wheel --python 3.11 -o dist
 
-      - name: Upload wheel as build artifact
+      - name: Build litellm-proxy-extras wheel
+        # litellm's pyproject.toml exact-pins litellm-proxy-extras and builds
+        # it as a uv workspace member from this same commit, so an install
+        # pointed only at our own registry needs this exact version published
+        # there too, not just present on public PyPI.
+        working-directory: litellm/litellm-proxy-extras
+        run: uv build --wheel --python 3.11 -o ../dist
+
+      - name: Build litellm-enterprise wheel
+        # Same exact-pin / same-workspace-member situation as
+        # litellm-proxy-extras above.
+        working-directory: litellm/enterprise
+        run: uv build --wheel --python 3.11 -o ../dist
+
+      - name: Upload wheels as build artifacts
         # v4 uses the @actions/artifact v2 backend, which Gitea's runner
         # doesn't support yet ("not currently supported on GHES"). v3 uses
         # the older protocol Gitea does support.
         uses: actions/upload-artifact@v3
         with:
-          name: litellm-wheel
+          name: litellm-wheels
           path: litellm/dist/*.whl
 
       - name: Publish to Gitea PyPI registry

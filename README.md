@@ -54,12 +54,37 @@ entire history and is dramatically slower for no benefit here.)
   manually via `workflow_dispatch`.
 - Checks out this repo with `submodules: recursive` (no mirror repo, no
   cross-repo checkout needed).
-- Installs a Rust toolchain and a C toolchain (`build-essential`), plus
-  [`uv`](https://docs.astral.sh/uv/) (a static binary, installed via its
-  install script), then builds the wheel with `uv build --wheel --python 3.11`
-  and publishes it with `uvx twine`.
-- Uploads the wheel as a workflow artifact and publishes it to the Gitea PyPI
-  registry via `twine`.
+- Installs a Rust toolchain, a C toolchain (`build-essential`), `uv`, and a
+  pinned/checksum-verified Node.js (version read from
+  `litellm/ui/litellm-dashboard/.nvmrc`).
+- Builds the admin UI (`npm ci && npm run build`) and replaces the committed
+  `litellm/proxy/_experimental/out` with the fresh export, matching what
+  litellm's own `Dockerfile` does before packaging.
+- Builds three wheels with `uv build --wheel --python 3.11`: `litellm` itself,
+  and its two exact-pinned workspace-member dependencies,
+  `litellm-proxy-extras` and `litellm-enterprise`.
+- Uploads all three wheels as a workflow artifact and publishes them to the
+  Gitea PyPI registry via `uvx twine`.
+
+**Why rebuild the UI instead of trusting the committed one:** the bundle
+already committed in the tag turned out to be a complete, self-consistent,
+already-correct export of the same dashboard source (verified locally: same
+947 files, same routes, differing only in Next.js's random per-build content-hash
+directory name) — but litellm's own `Dockerfile` always discards it and
+rebuilds fresh before packaging regardless, so this workflow matches that
+rather than relying on whatever happened to be committed at tagging time. Past
+experience installing plain `pip install litellm` and getting a broken/missing
+admin UI is exactly what this step guards against.
+
+**Why also build litellm-proxy-extras and litellm-enterprise:** litellm's
+`pyproject.toml` exact-pins both (`litellm-proxy-extras==X.Y.Z`,
+`litellm-enterprise==X.Y.Z`) and builds them as `uv` workspace members from
+the same commit, which is what keeps e.g. the Prisma schema they ship in sync
+with what litellm itself expects. That pinning only helps if the exact pinned
+version is actually resolvable, though — an install pointed only at this
+repo's own Gitea registry (not falling through to public PyPI) needs that
+exact version published there too, so both get built and published alongside
+`litellm` on every run.
 
 **Why uv, not system pip:** on the actual Gitea `act_runner` this was tested
 against, the runner's image turned out to be Debian bullseye with Python 3.9
