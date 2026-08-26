@@ -19,16 +19,35 @@ jobs:
       # No actions/setup-python step: it downloads a Python build into a local
       # tool cache that self-hosted/act_runner runners don't pre-populate the
       # way GitHub-hosted runners do, which fails with "not found in local
-      # cache". The runner's own image (registered as
-      # ubuntu-latest:docker://python:3.11-bookworm) already ships Python 3.11.
+      # cache". This assumes the runner's own image already ships a usable
+      # Python 3 (see the "Runner environment" step below to confirm which).
+
+      - name: Runner environment
+        # Prints what's actually in this runner's image so failures below are
+        # easy to diagnose without needing to know the image ahead of time.
+        run: |
+          echo "whoami: $(whoami) (uid $(id -u))"
+          cat /etc/os-release 2>/dev/null || true
+          python3 --version 2>&1 || echo "python3 not found"
+          for bin in cc gcc pip3 sudo apt-get; do
+            command -v "$bin" >/dev/null && echo "$bin: $(command -v "$bin")" || echo "$bin: not found"
+          done
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install C toolchain (required to link the PyO3/maturin extension)
+        # Falls back to sudo if not already root; the exact package manager
+        # (apt-get here) depends on the runner's image, so if this fails,
+        # check the "Runner environment" step above for what's actually there.
         run: |
-          apt-get update
-          apt-get install -y --no-install-recommends build-essential
+          if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
+            SUDO=sudo
+          else
+            SUDO=
+          fi
+          $SUDO apt-get update
+          $SUDO apt-get install -y --no-install-recommends build-essential
 
       - name: Build wheel
         # pip wheel reads [build-system] requires from litellm/pyproject.toml
