@@ -16,10 +16,11 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      # No actions/setup-python step: it downloads a Python build into a local
+      # tool cache that self-hosted/act_runner runners don't pre-populate the
+      # way GitHub-hosted runners do, which fails with "not found in local
+      # cache". The runner's own image (registered as
+      # ubuntu-latest:docker://python:3.11-bookworm) already ships Python 3.11.
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
