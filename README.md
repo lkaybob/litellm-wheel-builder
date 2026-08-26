@@ -33,6 +33,10 @@ and publishes the wheel.
 
 Always pin to a release **tag**, never a branch — this is the standard for this repo.
 
+For the full upgrade procedure (verifying the build, installing/upgrading a
+target environment, applying database migrations, rollback), see
+[`docs/upgrading.md`](docs/upgrading.md).
+
 ## Cloning
 
 LiteLLM's full git history is large, so always clone the submodule shallowly:
