@@ -1,0 +1,48 @@
+name: Build LiteLLM Wheel
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "litellm"   # only fires when the pinned submodule commit actually changes
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout builder repo + pinned LiteLLM submodule
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: pip install --no-cache-dir poetry poetry-core
+
+      - name: Build wheel
+        working-directory: litellm
+        run: poetry build -f wheel
+
+      - name: Upload wheel as build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: litellm-wheel
+          path: litellm/dist/*.whl
+
+      - name: Publish to Gitea PyPI registry
+        env:
+          GITEA_HOST: ${{ vars.GITEA_HOST }}
+          GITEA_ORG: ${{ vars.GITEA_ORG }}
+          TWINE_USERNAME: ${{ secrets.GITEA_PYPI_USER }}
+          TWINE_PASSWORD: ${{ secrets.GITEA_PYPI_TOKEN }}
+        working-directory: litellm
+        run: |
+          pip install --no-cache-dir twine
+          python -m twine upload \
+            --repository-url "$GITEA_HOST/api/packages/$GITEA_ORG/pypi/" \
+            dist/*.whl
