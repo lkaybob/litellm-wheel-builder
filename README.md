@@ -35,11 +35,16 @@ Always pin to a release **tag**, never a branch — this is the standard for thi
 
 ## Cloning
 
+LiteLLM's full git history is large, so always clone the submodule shallowly:
+
 ```bash
-git clone --recurse-submodules <this-repo-url>
+git clone --recurse-submodules --shallow-submodules <this-repo-url>
 # or, if already cloned without submodules:
-git submodule update --init --recursive
+git submodule update --init --recursive --depth 1
 ```
+
+(A plain `--recurse-submodules` without `--shallow-submodules` pulls LiteLLM's
+entire history and is dramatically slower for no benefit here.)
 
 ## CI (Gitea Actions)
 
