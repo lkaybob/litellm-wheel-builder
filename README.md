@@ -75,12 +75,15 @@ entirely may still need this build step revisited.
 
 ### Repo variables / secrets required
 
+Gitea reserves the `GITEA_` prefix for its own built-in variables/secrets, so
+none of these can be named `GITEA_*`:
+
 | Name | Kind | Purpose |
 |---|---|---|
-| `GITEA_HOST` | variable | e.g. `https://git.internal.example.com` |
-| `GITEA_ORG` | variable | org/owner to publish the package under |
-| `GITEA_PYPI_USER` | secret | Gitea username for package publishing |
-| `GITEA_PYPI_TOKEN` | secret | Gitea access token with package write scope |
+| `REGISTRY_HOST` | variable | e.g. `https://git.internal.example.com` |
+| `REGISTRY_ORG` | variable | org/owner to publish the package under |
+| `PYPI_PUBLISH_USER` | secret | Gitea username for package publishing |
+| `PYPI_PUBLISH_TOKEN` | secret | Gitea access token with package write scope |
 
 No token is needed to check out the submodule — it points at the public
 `https://github.com/BerriAI/litellm.git`.

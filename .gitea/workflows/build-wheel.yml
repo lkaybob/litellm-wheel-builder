@@ -45,13 +45,13 @@ jobs:
 
       - name: Publish to Gitea PyPI registry
         env:
-          GITEA_HOST: ${{ vars.GITEA_HOST }}
-          GITEA_ORG: ${{ vars.GITEA_ORG }}
-          TWINE_USERNAME: ${{ secrets.GITEA_PYPI_USER }}
-          TWINE_PASSWORD: ${{ secrets.GITEA_PYPI_TOKEN }}
+          REGISTRY_HOST: ${{ vars.REGISTRY_HOST }}
+          REGISTRY_ORG: ${{ vars.REGISTRY_ORG }}
+          TWINE_USERNAME: ${{ secrets.PYPI_PUBLISH_USER }}
+          TWINE_PASSWORD: ${{ secrets.PYPI_PUBLISH_TOKEN }}
         working-directory: litellm
         run: |
           pip install --no-cache-dir twine
           python -m twine upload \
-            --repository-url "$GITEA_HOST/api/packages/$GITEA_ORG/pypi/" \
+            --repository-url "$REGISTRY_HOST/api/packages/$REGISTRY_ORG/pypi/" \
             dist/*.whl
