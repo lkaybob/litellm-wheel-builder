@@ -70,49 +70,11 @@ entire history and is dramatically slower for no benefit here.)
 - Uploads all three wheels as a workflow artifact and publishes them to the
   Gitea PyPI registry via `uvx twine`.
 
-**Why rebuild the UI instead of trusting the committed one:** the bundle
-already committed in the tag turned out to be a complete, self-consistent,
-already-correct export of the same dashboard source (verified locally: same
-947 files, same routes, differing only in Next.js's random per-build content-hash
-directory name) — but litellm's own `Dockerfile` always discards it and
-rebuilds fresh before packaging regardless, so this workflow matches that
-rather than relying on whatever happened to be committed at tagging time. Past
-experience installing plain `pip install litellm` and getting a broken/missing
-admin UI is exactly what this step guards against.
-
-**Why also build litellm-proxy-extras and litellm-enterprise:** litellm's
-`pyproject.toml` exact-pins both (`litellm-proxy-extras==X.Y.Z`,
-`litellm-enterprise==X.Y.Z`) and builds them as `uv` workspace members from
-the same commit, which is what keeps e.g. the Prisma schema they ship in sync
-with what litellm itself expects. That pinning only helps if the exact pinned
-version is actually resolvable, though — an install pointed only at this
-repo's own Gitea registry (not falling through to public PyPI) needs that
-exact version published there too, so both get built and published alongside
-`litellm` on every run.
-
-**Why uv, not system pip:** on the actual Gitea `act_runner` this was tested
-against, the runner's image turned out to be Debian bullseye with Python 3.9
-and no `pip3` at all — too old for litellm's `requires-python >=3.10` and
-nothing to build with anyway. `uv` provisions its own Python 3.11 and runs
-tools (`uvx twine`) in isolated environments, independent of whatever the
-runner's base image happens to ship. The "Runner environment" step earlier in
-the workflow prints `whoami`/`/etc/os-release`/`python3 --version`/`cc`/`sudo`
-availability so a different runner's mismatch is diagnosable from the log
-alone, without needing to know the image ahead of time.
-
-**Build backend note:** LiteLLM's `pyproject.toml` build backend has changed
-across releases — `poetry-core` (through ~1.6x), `uv_build` (~1.85-1.90), and
-`maturin` from 1.95 onward, including the currently pinned `v1.98.0`. Maturin
-compiles a native PyO3 extension (`litellm.rust_bridge._native`) from the
-`litellm-rust/` Cargo workspace, so **the produced wheel is platform/ABI-specific**
-(e.g. `litellm-1.98.0-cp311-cp311-linux_x86_64.whl`), not a universal
-`py3-none-any` wheel — a single CI run only covers the runner's own OS/arch/Python
-combination. `uv build` deliberately isn't pinned to a specific maturin version
-in this workflow: it reads `[build-system] requires` from the submodule's own
-`pyproject.toml` via PEP 517 build isolation, so a future `bump-litellm.sh` run
-that lands on a different backend/maturin version doesn't require editing the
-workflow too — though a bump back to a pure-Python backend or a new backend
-entirely may still need this build step revisited.
+The workflow file's own inline comments explain the non-obvious choices (why
+`uv` instead of system pip, why the UI gets rebuilt instead of trusting the
+committed export, why the wheel is platform/ABI-specific, why three wheels
+instead of one, etc.). [`CLAUDE.md`](CLAUDE.md) has a distilled list of this
+Gitea instance's operating constraints — read it before editing this workflow.
 
 ### Repo variables / secrets required
 
