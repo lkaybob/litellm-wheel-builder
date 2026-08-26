@@ -21,12 +21,21 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Poetry
-        run: pip install --no-cache-dir poetry poetry-core
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install C toolchain (required to link the PyO3/maturin extension)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential
 
       - name: Build wheel
+        # pip wheel reads [build-system] requires from litellm/pyproject.toml
+        # (currently maturin==1.9.4) via PEP 517 build isolation, so the
+        # maturin version tracks whatever the pinned submodule tag declares
+        # instead of being hardcoded here.
         working-directory: litellm
-        run: poetry build -f wheel
+        run: pip wheel . -w dist --no-deps
 
       - name: Upload wheel as build artifact
         uses: actions/upload-artifact@v4

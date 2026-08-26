@@ -54,10 +54,24 @@ entire history and is dramatically slower for no benefit here.)
   manually via `workflow_dispatch`.
 - Checks out this repo with `submodules: recursive` (no mirror repo, no
   cross-repo checkout needed).
-- Builds the wheel with `poetry build -f wheel` (LiteLLM's `pyproject.toml` uses
-  `poetry.core.masonry.api` as its build backend).
+- Installs a Rust toolchain and a C toolchain (`build-essential`), then builds
+  the wheel with `pip wheel . -w dist --no-deps`.
 - Uploads the wheel as a workflow artifact and publishes it to the Gitea PyPI
   registry via `twine`.
+
+**Build backend note:** LiteLLM's `pyproject.toml` build backend has changed
+across releases — `poetry-core` (through ~1.6x), `uv_build` (~1.85-1.90), and
+`maturin` from 1.95 onward, including the currently pinned `v1.98.0`. Maturin
+compiles a native PyO3 extension (`litellm.rust_bridge._native`) from the
+`litellm-rust/` Cargo workspace, so **the produced wheel is platform/ABI-specific**
+(e.g. `litellm-1.98.0-cp311-cp311-linux_x86_64.whl`), not a universal
+`py3-none-any` wheel — a single CI run only covers the runner's own OS/arch/Python
+combination. `pip wheel .` deliberately isn't pinned to a specific maturin
+version in this workflow: it reads `[build-system] requires` from the submodule's
+own `pyproject.toml` via PEP 517 build isolation, so a future `bump-litellm.sh`
+run that lands on a different backend/maturin version doesn't require editing
+the workflow too — though a bump back to a pure-Python backend or a new backend
+entirely may still need this build step revisited.
 
 ### Repo variables / secrets required
 
