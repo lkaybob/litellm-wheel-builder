@@ -19,8 +19,8 @@ jobs:
       # No actions/setup-python step: it downloads a Python build into a local
       # tool cache that self-hosted/act_runner runners don't pre-populate the
       # way GitHub-hosted runners do, which fails with "not found in local
-      # cache". This assumes the runner's own image already ships a usable
-      # Python 3 (see the "Runner environment" step below to confirm which).
+      # cache". Instead this workflow uses uv (below) to provision its own
+      # Python, independent of whatever the runner's image ships.
 
       - name: Runner environment
         # Prints what's actually in this runner's image so failures below are
@@ -49,13 +49,21 @@ jobs:
           $SUDO apt-get update
           $SUDO apt-get install -y --no-install-recommends build-essential
 
+      - name: Install uv
+        # The runner's system Python was found to be 3.9 with no pip
+        # (litellm requires >=3.10). uv is a single static binary that
+        # provisions its own interpreters and tools, sidestepping both.
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Build wheel
-        # pip wheel reads [build-system] requires from litellm/pyproject.toml
+        # uv build reads [build-system] requires from litellm/pyproject.toml
         # (currently maturin==1.9.4) via PEP 517 build isolation, so the
         # maturin version tracks whatever the pinned submodule tag declares
         # instead of being hardcoded here.
         working-directory: litellm
-        run: pip wheel . -w dist --no-deps
+        run: uv build --wheel --python 3.11 -o dist
 
       - name: Upload wheel as build artifact
         uses: actions/upload-artifact@v4
@@ -71,7 +79,6 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.PYPI_PUBLISH_TOKEN }}
         working-directory: litellm
         run: |
-          pip install --no-cache-dir twine
-          python -m twine upload \
+          uvx twine upload \
             --repository-url "$REGISTRY_HOST/api/packages/$REGISTRY_ORG/pypi/" \
             dist/*.whl
