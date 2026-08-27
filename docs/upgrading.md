@@ -68,10 +68,16 @@ index-available) combination:
 ```bash
 pip install --index-url "$REGISTRY_HOST/api/packages/$REGISTRY_ORG/pypi/simple" \
   --upgrade \
-  "litellm[proxy]==X.Y.Z" \
+  "litellm[proxy,extra_proxy]==X.Y.Z" \
   "litellm-proxy-extras==<version pinned by litellm X.Y.Z's pyproject.toml>" \
   "litellm-enterprise==<same, if used>"
 ```
+
+Both `proxy` and `extra_proxy` are needed — they're separate extras in
+`litellm/pyproject.toml`. `proxy` alone pulls in fastapi/uvicorn/etc. but
+*not* `prisma`; without `extra_proxy` the proxy fails or hangs at startup
+when it tries to run its Prisma-based DB migration/connection logic, since
+`prisma` (and the query-engine binary it fetches on first use) is missing.
 
 The exact `litellm-proxy-extras`/`litellm-enterprise` versions for a given
 `litellm` release are in that tag's root `pyproject.toml`
@@ -87,12 +93,34 @@ official Docker image runs at container start
 (`docker/entrypoint.sh` → `litellm/proxy/prisma_migration.py`):
 
 ```bash
-python "$(python -c 'import litellm.proxy, os; print(os.path.dirname(litellm.proxy.__file__))')/prisma_migration.py"
+cd "$(python -c 'import litellm.proxy, os; print(os.path.dirname(litellm.proxy.__file__))')" && python prisma_migration.py
 ```
 
+The `cd` matters: litellm's own migration code resolves the schema relative
+to the current directory (`./schema.prisma` in
+`litellm/proxy/db/check_migration.py`), not relative to the script. The
+official Docker image gets this for free because its `WORKDIR` is already
+the repo root containing `schema.prisma`; a bare wheel install has no such
+directory; running from wherever the schema actually lives
+(`litellm/proxy/schema.prisma`, bundled into the wheel) is what the Docker
+image effectively relies on too.
+
+There's no shortcut around the `cd` via a `--schema` flag or env var:
+`prisma_migration.py` never reads `sys.argv` (confirmed by reading the
+script — it imports `sys` only for `sys.path.insert`), and its
+`subprocess.run(["prisma", "generate"], ...)` call is a hardcoded list, not
+built from any variable. Anything passed on the command line when invoking
+this script is silently discarded; it never reaches the `prisma generate`
+subprocess. `prisma`'s own config (`prisma/_config.py`) likewise has no
+schema-path env var, only `PRISMA_VERSION`/`PRISMA_BINARY_CACHE_DIR`/etc. —
+confirmed against the installed package, not just its `--schema` CLI flag's
+docs. Changing directory is the only way to make this resolve correctly
+short of patching the installed script itself, which would silently break
+again on every version bump.
+
 This requires the `prisma` CLI to be available (installed as part of
-litellm's `proxy` extras) and a reachable database configured the same way
-the proxy itself expects (`DATABASE_URL`, etc.).
+litellm's `extra_proxy` extra — see step 5) and a reachable database
+configured the same way the proxy itself expects (`DATABASE_URL`, etc.).
 
 ## 7. Post-upgrade smoke checks
 
@@ -111,7 +139,7 @@ versions automatically). To roll back, reinstall the previous exact triple:
 
 ```bash
 pip install --index-url "$REGISTRY_HOST/api/packages/$REGISTRY_ORG/pypi/simple" \
-  "litellm[proxy]==<previous>" \
+  "litellm[proxy,extra_proxy]==<previous>" \
   "litellm-proxy-extras==<previous>" \
   "litellm-enterprise==<previous>"
 ```
