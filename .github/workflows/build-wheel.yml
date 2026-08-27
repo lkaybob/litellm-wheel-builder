@@ -1,0 +1,106 @@
+name: Build LiteLLM Wheel (GitHub Actions reference)
+
+# Reference copy of .gitea/workflows/build-wheel.yml for running the same
+# build on GitHub-hosted runners. GitHub-hosted runners don't have the
+# self-hosted act_runner quirks documented in CLAUDE.md (no tool-cache gap,
+# no upload-artifact@v4 rejection), so this drops the workarounds that exist
+# specifically for those, but keeps everything that isn't a Gitea-only
+# workaround. Build-only: no publish step (see bottom of file) — the actual
+# publish to the Gitea PyPI registry happens in
+# .gitea/workflows/build-wheel.yml, which remains this project's real
+# deployment path.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout builder repo + pinned LiteLLM submodule
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Runner environment
+        run: |
+          echo "whoami: $(whoami) (uid $(id -u))"
+          cat /etc/os-release 2>/dev/null || true
+          python3 --version 2>&1 || echo "python3 not found"
+          for bin in cc gcc pip3 sudo apt-get; do
+            command -v "$bin" >/dev/null && echo "$bin: $(command -v "$bin")" || echo "$bin: not found"
+          done
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install C toolchain (required to link the PyO3/maturin extension)
+        # ubuntu-latest ships build-essential already; kept here so this stays
+        # a self-contained match for the Gitea workflow's steps.
+        run: |
+          if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
+            SUDO=sudo
+          else
+            SUDO=
+          fi
+          $SUDO apt-get update
+          $SUDO apt-get install -y --no-install-recommends build-essential xz-utils
+
+      - name: Install uv
+        # Used for its Python 3.11 provisioning (pinned build interpreter,
+        # independent of whatever Python the runner ships) and for `uv build`
+        # itself, not as a Gitea-specific workaround.
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install Node.js
+        # Version comes from litellm's own ui/litellm-dashboard/.nvmrc so
+        # this tracks whatever the pinned submodule tag actually requires.
+        # Downloaded and checksum-verified directly, matching litellm's own
+        # docker/build_admin_ui.sh in spirit (not a Gitea workaround).
+        run: |
+          NODE_VERSION="$(cat litellm/ui/litellm-dashboard/.nvmrc)"
+          DIST="node-v${NODE_VERSION}-linux-x64"
+          WORKDIR="$(mktemp -d)"
+          cd "$WORKDIR"
+          curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/${DIST}.tar.xz"
+          curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" \
+            | grep " ${DIST}.tar.xz\$" | sha256sum -c -
+          mkdir -p "$HOME/.local"
+          tar -xJf "${DIST}.tar.xz" -C "$HOME/.local"
+          mv "$HOME/.local/${DIST}" "$HOME/.local/node"
+          echo "$HOME/.local/node/bin" >> "$GITHUB_PATH"
+
+      - name: Build admin UI and replace the committed bundle
+        run: |
+          cd litellm/ui/litellm-dashboard
+          npm ci
+          npm run build
+          rm -rf ../../litellm/proxy/_experimental/out
+          cp -r out/. ../../litellm/proxy/_experimental/out/
+
+      - name: Build litellm wheel
+        working-directory: litellm
+        run: uv build --wheel --python 3.11 -o dist
+
+      - name: Build litellm-proxy-extras wheel
+        working-directory: litellm/litellm-proxy-extras
+        run: uv build --wheel --python 3.11 -o ../dist
+
+      - name: Build litellm-enterprise wheel
+        working-directory: litellm/enterprise
+        run: uv build --wheel --python 3.11 -o ../dist
+
+      - name: Upload wheels as build artifacts
+        # GitHub-hosted runners support the current @actions/artifact v2
+        # backend, so this uses v4 rather than the v3 pin the Gitea workflow
+        # needs.
+        uses: actions/upload-artifact@v4
+        with:
+          name: litellm-wheels
+          path: litellm/dist/*.whl
+
+      # No publish step: this workflow is a build-only reference copy, not
+      # this project's deployment path. The actual publish to the Gitea PyPI
+      # registry happens in .gitea/workflows/build-wheel.yml.

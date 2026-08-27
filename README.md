@@ -91,6 +91,18 @@ none of these can be named `GITEA_*`:
 No token is needed to check out the submodule — it points at the public
 `https://github.com/BerriAI/litellm.git`.
 
+## CI (GitHub Actions, reference)
+
+[`.github/workflows/build-wheel.yml`](.github/workflows/build-wheel.yml) is a
+build-only reference copy of the Gitea workflow, for running the same build
+on GitHub-hosted runners (e.g. against a mirror of this repo). It's manual
+(`workflow_dispatch` only) and stops after uploading the wheels as a workflow
+artifact — no publish step, since this repo's real deployment path is the
+Gitea workflow above. It drops the Gitea-`act_runner`-specific workarounds
+(no `setup-python` tool-cache issue, `upload-artifact@v4` works) but keeps
+everything else, including the `uv`-provisioned Python 3.11 and the
+checksum-verified Node.js install.
+
 ### Duplicate version note
 
 Gitea's package registry rejects re-uploading the same version+filename. Since a
